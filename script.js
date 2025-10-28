@@ -4,7 +4,7 @@
     // Importa los módulos de Firebase Authentication
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateEmail } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
     // Importa los módulos de Firestore
-    import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -37,7 +37,7 @@
       constructor() {
         this.currentUser = null; // Objeto de usuario de Firebase Auth
         this.userProfile = null; // Perfil de usuario de Firestore (contiene el rol)
-        this.isAdmin = false; // Flag para verificar si el usuario actual es Javier (Administrador)
+        this.isAdmin = false; // Flag para verificar si el usuario actual es Admin (Administrador)
         this.isInitialized = false; // Nuevo flag para controlar la inicialización
       }
 
@@ -51,7 +51,7 @@
               const userDoc = await storage.get('users', user.uid);
               if (userDoc) {
                 this.userProfile = userDoc;
-                this.isAdmin = userDoc.role === 'Javier';
+                this.isAdmin = userDoc.role === 'Admin';
                 ui.updateUserDisplay();
                 // Solo navegar al dashboard si no estamos ya en la aplicación principal
                 // y si el AuthManager ya está completamente inicializado.
@@ -161,118 +161,66 @@
       // Método para crear un nuevo usuario (solo para administradores)
       async createNewUser(email, password, role) {
         if (!this.isAdmin) {
-          ui.showToast('Permiso denegado: Solo administradores pueden crear usuarios.');
-          return false;
+            ui.showToast('Permiso denegado: Solo administradores pueden crear usuarios.');
+            return false;
         }
+
         try {
-          // **ADVERTENCIA DE SEGURIDAD:**
-          // Crear usuarios de Auth directamente desde el cliente con roles específicos
-          // y sin desloguear al administrador es una operación que DEBERÍA hacerse
-          // a través de Firebase Cloud Functions (usando Firebase Admin SDK).
-          // Este código es una SIMULACIÓN para el frontend y tiene limitaciones.
-          // `createUserWithEmailAndPassword` autentica al usuario recién creado,
-          // lo que podría desloguear al administrador si no se maneja cuidadosamente.
-          // Para este ejemplo, simplemente creamos el usuario y su perfil.
-          // En un entorno real, el admin llamaría a una Cloud Function para esto.
-
+          // Firebase client SDK for auth signs in the new user automatically.
+          // This will sign out the current admin. We need to sign the new user out
+          // immediately so the admin can log back in. This is a limitation of the client SDK.
           const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-          const newUser = userCredential.user;
-
-          // Guardar el perfil del nuevo usuario en Firestore
-          await setDoc(doc(db, 'users', newUser.uid), {
+          const user = userCredential.user;
+          
+          // Guardar el perfil del usuario en Firestore
+          await setDoc(doc(db, 'users', user.uid), {
             email: email,
             role: role,
             username: email.split('@')[0],
             createdAt: new Date().toISOString()
           });
-
-          // Si el administrador estaba logueado, `createUserWithEmailAndPassword`
-          // lo desloguea y loguea al nuevo usuario. Para mantener al admin logueado,
-          // necesitaríamos re-autenticar al admin o usar Cloud Functions.
-          // Para este ejemplo, simplemente cerramos la sesión del nuevo usuario
-          // para que el admin pueda continuar.
-          await signOut(auth); // Cierra la sesión del nuevo usuario
-          // Luego, el onAuthStateChanged volverá a detectar al admin si estaba logueado.
-
-          ui.showToast(`Usuario ${email} creado con rol ${role}.`);
+          
+          // Sign out the newly created user. The admin is already logged out by the creation process.
+          await signOut(auth);
+          
+          ui.showToast('Usuario creado. Ha sido desconectado y debe volver a iniciar sesión.');
           return true;
+
         } catch (error) {
-          console.error("Error al crear nuevo usuario:", error);
-          let errorMessage = "Error al crear usuario.";
+          console.error("Error al crear nuevo usuario:", error.code, error.message);
+          let errorMessage = "Error al crear nuevo usuario.";
           if (error.code === 'auth/email-already-in-use') {
             errorMessage = "El email ya está en uso.";
           } else if (error.code === 'auth/weak-password') {
             errorMessage = "La contraseña es demasiado débil (mínimo 6 caracteres).";
-          } else if (error.code === 'auth/invalid-email') {
-            errorMessage = "Formato de email inválido.";
           }
           ui.showToast(errorMessage);
           return false;
         }
       }
-
+    
       // Método para actualizar el perfil de usuario en Firestore
       async updateUserProfile(userId, updatedData) {
         if (!this.isAdmin) {
-          ui.showToast('Permiso denegado: Solo administradores pueden editar perfiles de usuario.');
-          return false;
-        }
-        try {
-          await storage.update('users', { id: userId, ...updatedData });
-          ui.showToast('Perfil de usuario actualizado.');
-          return true;
-        } catch (error) {
-          console.error("Error al actualizar perfil de usuario:", error);
-          ui.showToast(`Error al actualizar perfil: ${error.message}`);
-          return false;
-        }
-      }
-
-      // Método para actualizar la contraseña de un usuario (SIMULACIÓN para el frontend)
-      async updateUserPasswordByAdmin(userId, newPassword) {
-        if (!this.isAdmin) {
-          ui.showToast('Permiso denegado: Solo administradores pueden cambiar contraseñas.');
-          return false;
-        }
-        if (newPassword.length < 6) {
-            ui.showToast('La contraseña debe tener al menos 6 caracteres.');
+            ui.showToast('Permiso denegado: Solo administradores pueden editar perfiles de usuario.');
             return false;
         }
-        // **ADVERTENCIA DE SEGURIDAD:**
-        // Esta es una SIMULACIÓN. En un entorno de producción, NO se puede cambiar
-        // la contraseña de otro usuario directamente desde el cliente.
-        // Se DEBE usar Firebase Admin SDK a través de una Cloud Function.
-        // Aquí, simplemente mostraremos un mensaje de éxito simulado.
-        console.warn(`SIMULACIÓN: Contraseña del usuario ${userId} cambiada a ${newPassword}. En producción, esto requeriría Cloud Functions.`);
-        ui.showToast('Contraseña actualizada (simulado). En producción, esto requiere Cloud Functions.');
-        return true;
-      }
-
-      // Método para eliminar un usuario (SIMULACIÓN para el frontend)
-      async deleteUserByAdmin(userId) {
-        if (!this.isAdmin) {
-          ui.showToast('Permiso denegado: Solo administradores pueden eliminar usuarios.');
-          return false;
-        }
-        if (this.currentUser && this.currentUser.uid === userId) {
-            ui.showToast('No puedes eliminar tu propia cuenta.');
+    
+        try {
+            // Directly update the Firestore document
+            await storage.update('users', { id: userId, ...updatedData });
+            ui.showToast('Perfil de usuario actualizado.');
+            return true;
+        } catch (error) {
+            console.error("Error al actualizar perfil de usuario:", error);
+            ui.showToast('Error al actualizar el perfil.');
             return false;
         }
-        try {
-          // **ADVERTENCIA DE SEGURIDAD:**
-          // Esta es una SIMULACIÓN. En un entorno de producción, NO se puede eliminar
-          // la cuenta de Firebase Auth de otro usuario directamente desde el cliente.
-          // Se DEBE usar Firebase Admin SDK a través de una Cloud Function.
-          // Aquí, solo eliminaremos el perfil de Firestore.
-          await storage.delete('users', userId);
-          ui.showToast('Perfil de usuario eliminado de Firestore. (La cuenta de Auth puede persistir sin Cloud Functions)');
-          return true;
-        } catch (error) {
-          console.error("Error al eliminar usuario:", error);
-          ui.showToast(`Error al eliminar usuario: ${error.message}`);
-          return false;
-        }
-      }
+    }
+
+    // Admin-side user deletion and password changes are not possible with the client-side SDK.
+    // These features require a backend implementation (like Firebase Cloud Functions) to be secure.
+    // The related methods (`deleteUserByAdmin`, `updateUserPasswordByAdmin`) have been removed to restore functionality.
     }
 
     // ===== STORAGE MANAGER (MODIFICADO PARA FIREBASE) =====
@@ -294,64 +242,52 @@
         console.log("Firestore inicializado y listo para usar.");
       }
 
-      async get(storeName, id = null) {
+      async get(storeName, id = null, queryConstraints = []) {
         if (this.fallbackMode) {
-          const data = JSON.parse(localStorage.getItem(`${DB_NAME}_${storeName}`) || '[]');
-          if (id !== null) {
-            return data.find(item => String(item.id) === String(id)) || null;
-          }
-          return data;
-        }
-
-        try {
-          if (id !== null) {
-            const docRef = doc(this.db, storeName, String(id));
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              return { id: docSnap.id, ...docSnap.data() };
-            } else {
-              return null;
+            const data = JSON.parse(localStorage.getItem(`${DB_NAME}_${storeName}`) || '[]');
+            if (id !== null) {
+                return data.find(item => String(item.id) === String(id)) || null;
             }
-          } else {
-            const querySnapshot = await getDocs(collection(this.db, storeName));
-            const data = [];
-            querySnapshot.forEach((d) => {
-              data.push({ id: d.id, ...d.data() });
-            });
+            // Note: Fallback mode does not support queryConstraints.
             return data;
-          }
-        } catch (error) {
-          console.error(`Error al obtener datos de Firestore para ${storeName}:`, error);
-          ui.showToast(`Error al cargar ${storeName}. Revisa la consola.`);
-          return [];
         }
-      }
-
+    
+        try {
+            if (id !== null) {
+                const docRef = doc(this.db, storeName, String(id));
+                const docSnap = await getDoc(docRef);
+                return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+            } else {
+                const collRef = collection(this.db, storeName);
+                const q = queryConstraints.length > 0 ? query(collRef, ...queryConstraints) : collRef;
+                const querySnapshot = await getDocs(q);
+                const data = [];
+                querySnapshot.forEach((d) => {
+                    data.push({ id: d.id, ...d.data() });
+                });
+                return data;
+            }
+        } catch (error) {
+            console.error(`Error al obtener datos de Firestore para ${storeName}:`, error);
+            ui.showToast(`Error al cargar ${storeName}. Revisa la consola.`);
+            return id === null ? [] : null;
+        }
+    }
+    
       async set(storeName, data) {
         if (this.fallbackMode) {
           localStorage.setItem(`${DB_NAME}_${storeName}`, JSON.stringify(data));
           return;
         }
-
+    
         try {
-          const existingDocsSnapshot = await getDocs(collection(this.db, storeName));
-          const deleteBatch = writeBatch(this.db);
-          existingDocsSnapshot.forEach((d) => {
-            deleteBatch.delete(doc(this.db, storeName, d.id));
-          });
-          await deleteBatch.commit();
-
-          if (Array.isArray(data) && data.length > 0) {
-            const addBatch = writeBatch(this.db);
-            for (const item of data) {
-              // Si el item ya tiene un ID (ej. de un backup o de una operación previa), úsalo.
-              // De lo contrario, Firestore generará uno.
-              const docRef = item.id ? doc(this.db, storeName, String(item.id)) : doc(collection(this.db, storeName));
-              const { id, ...itemWithoutId } = item; // Excluir 'id' si se usa setDoc con un ID explícito
-              await addBatch.set(docRef, itemWithoutId); // Usar await para cada set en el batch
-            }
-            await addBatch.commit();
+          const batch = writeBatch(this.db);
+          for (const item of data) {
+            const docRef = item.id ? doc(this.db, storeName, String(item.id)) : doc(collection(this.db, storeName));
+            const { id, ...itemWithoutId } = item;
+            batch.set(docRef, itemWithoutId, { merge: true }); // Use merge to avoid overwriting existing fields
           }
+          await batch.commit();
         } catch (error) {
           console.error(`Error al establecer datos en Firestore para ${storeName}:`, error);
           ui.showToast(`Error al guardar ${storeName}. Revisa la consola.`);
@@ -643,11 +579,11 @@
           document.getElementById('userName').textContent = authManager.userProfile.username;
           
           let displayedRole = '';
-          if (authManager.userProfile.role === 'Javier') {
+          if (authManager.userProfile.role === 'Admin') {
             displayedRole = 'Administrador';
-          } else if (authManager.userProfile.role === 'Diego') {
+          } else if (authManager.userProfile.role === 'Ventas') {
             displayedRole = 'Cajero';
-          } else if (authManager.userProfile.role === 'Nena') {
+          } else if (authManager.userProfile.role === 'Bodeguero') {
             displayedRole = 'Bodeguero';
           }
           document.getElementById('userRole').textContent = `(${displayedRole})`;
@@ -687,10 +623,14 @@
 
         filtered.forEach(product => {
           const tr = document.createElement('tr');
-          const stockStatus = product.stock <= minStock ? 'low-stock' : '';
-          const stockBadge = product.stock <= minStock ? 
-            `<span class="status-badge status-low-stock"><i class="fas fa-exclamation-triangle"></i> Stock Bajo</span>` :
-            `<span class="status-badge status-paid"><i class="fas fa-check"></i> Disponible</span>`;
+          let stockBadge;
+          if (product.stock <= 0) {
+            stockBadge = `<span class="status-badge status-out-of-stock"><i class="fas fa-times-circle"></i> Agotado</span>`;
+          } else if (product.stock <= minStock) {
+            stockBadge = `<span class="status-badge status-low-stock"><i class="fas fa-exclamation-triangle"></i> Stock Bajo</span>`;
+          } else {
+            stockBadge = `<span class="status-badge status-in-stock"><i class="fas fa-check-circle"></i> Disponible</span>`;
+          }
 
           tr.innerHTML = `
             <td>
@@ -1764,6 +1704,84 @@
             ui.showToast("Error al generar PDF. Intenta de nuevo.");
             invoiceElement.style.display = 'none'; // Hide even on error
         });
+      }
+
+      async quickSale() {
+        const body = `
+          <div id="quickSaleModal">
+            <input type="text" id="quickSaleSearch" class="form-input" placeholder="Buscar producto por nombre o SKU...">
+            <div id="quickSaleResults"></div>
+          </div>
+        `;
+        ui.showModal('Venta Rápida', body, null, false);
+
+        const searchInput = document.getElementById('quickSaleSearch');
+        const resultsContainer = document.getElementById('quickSaleResults');
+        const products = await storage.get('products');
+
+        const renderResults = (query = '') => {
+          resultsContainer.innerHTML = '';
+          const filtered = products.filter(p => p.stock > 0 && (p.name.toLowerCase().includes(query.toLowerCase()) || p.sku.toLowerCase().includes(query.toLowerCase())));
+          
+          filtered.forEach(product => {
+            const item = document.createElement('div');
+            item.className = 'quick-sale-item';
+            item.dataset.id = product.id;
+            item.innerHTML = `
+              <div class="quick-sale-item-info">
+                <strong>${product.name}</strong>
+                <small>SKU: ${product.sku} | Stock: ${product.stock}</small>
+              </div>
+              <div class="quick-sale-item-price">${ui.formatCurrency(product.sellPrice)}</div>
+            `;
+            item.addEventListener('click', async () => {
+              await this.processQuickSale(product);
+              ui.closeModal();
+            });
+            resultsContainer.appendChild(item);
+          });
+        };
+
+        searchInput.addEventListener('input', (e) => renderResults(e.target.value));
+        renderResults();
+      }
+
+      async processQuickSale(product) {
+        // This is a simplified sale process
+        const sale = {
+          customerId: null,
+          customerName: 'Consumidor Final',
+          date: new Date().toISOString().split('T')[0],
+          items: [{
+            productId: product.id,
+            productName: product.name,
+            quantity: 1,
+            sellPrice: product.sellPrice,
+            imeisSold: [] // Quick sale doesn't handle IMEIs for simplicity
+          }],
+          imeisSold: [],
+          subtotal: product.sellPrice,
+          taxRate: settingsManager.settings.taxRate || 19,
+          tax: product.sellPrice * ((settingsManager.settings.taxRate || 19) / 100),
+          total: product.sellPrice * (1 + ((settingsManager.settings.taxRate || 19) / 100)),
+          paymentStatus: 'paid',
+          paymentMethod: 'efectivo',
+          createdAt: new Date().toISOString()
+        };
+
+        try {
+          await storage.add('sales', sale);
+          product.stock -= 1;
+          await storage.update('products', product);
+          ui.showToast(`Venta rápida de ${product.name} registrada.`);
+          this.loadSales();
+          if (ui.activeTab === 'dashboard') {
+            dashboardManager.loadDashboard();
+          }
+        } catch (error) {
+          console.error("Error en venta rápida:", error);
+          ui.showToast('Error al registrar venta rápida.');
+        }
       }
     }
 
@@ -3658,7 +3676,6 @@
           const tr = document.createElement('tr');
           const isCurrentUser = authManager.currentUser && authManager.currentUser.uid === user.id;
           const canEdit = authManager.isAdmin; // Solo administradores pueden editar
-          const canDelete = authManager.isAdmin && !isCurrentUser; // No permitir que Javier se elimine a sí mismo
 
           tr.innerHTML = `
             <td><strong>${user.email}</strong></td>
@@ -3671,11 +3688,7 @@
                   <i class="fas fa-edit"></i> Editar
                 </button>
               ` : ''}
-              ${canDelete ? `
-                <button class="btn btn-sm btn-destructive" data-action="delete-user" data-id="${user.id}">
-                  <i class="fas fa-user-minus"></i> Eliminar
-                </button>
-              ` : ''}
+              // The delete button has been removed as the functionality is not supported without a backend.
             </td>
           `;
           tableBody.appendChild(tr);
@@ -3720,9 +3733,9 @@
           <div class="form-group">
             <label class="form-label">Rol *</label>
             <select class="form-select" id="userRole">
-              <option value="Javier">Administrador</option>
-              <option value="Diego">Cajero</option>
-              <option value="Nena">Bodeguero</option>
+              <option value="Admin">Administrador</option>
+              <option value="Ventas">Cajero</option>
+              <option value="Bodeguero">Bodeguero</option>
             </select>
           </div>
         `;
@@ -3757,7 +3770,6 @@
           <div class="form-group">
             <label class="form-label">Email</label>
             <input type="email" class="form-input" id="editUserEmail" value="${user.email}" readonly>
-            <small style="color: var(--muted-foreground);">El email no se puede cambiar directamente desde aquí.</small>
           </div>
           <div class="form-group">
             <label class="form-label">Nombre de Usuario *</label>
@@ -3766,26 +3778,19 @@
           <div class="form-group">
             <label class="form-label">Rol *</label>
             <select class="form-select" id="editUserRole">
-              <option value="Javier" ${user.role === 'Javier' ? 'selected' : ''}>Administrador</option>
-              <option value="Diego" ${user.role === 'Diego' ? 'selected' : ''}>Cajero</option>
-              <option value="Nena" ${user.role === 'Nena' ? 'selected' : ''}>Bodeguero</option>
+              <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>Administrador</option>
+              <option value="Ventas" ${user.role === 'Ventas' ? 'selected' : ''}>Cajero</option>
+              <option value="Bodeguero" ${user.role === 'Bodeguero' ? 'selected' : ''}>Bodeguero</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Nueva Contraseña (dejar vacío para no cambiar)</label>
-            <input type="password" class="form-input" id="editUserPassword" placeholder="Mínimo 6 caracteres">
-            <small style="color: var(--destructive);">
-                **ADVERTENCIA:** En un entorno de producción, el cambio de contraseña de otro usuario
-                debería realizarse a través de Firebase Cloud Functions por seguridad.
-                Esta es una simulación.
-            </small>
+             <p class="text-muted-foreground">La eliminación de usuarios y el cambio de contraseñas de otros usuarios no es posible sin un backend seguro (ej. Firebase Cloud Functions) y ha sido deshabilitado.</p>
           </div>
         `;
 
         ui.showModal('Editar Usuario', body, async () => {
           const updatedUserName = document.getElementById('editUserName').value.trim();
           const updatedUserRole = document.getElementById('editUserRole').value;
-          const newPassword = document.getElementById('editUserPassword').value.trim();
 
           if (!updatedUserName || !updatedUserRole) {
             ui.showToast('Nombre de usuario y rol son obligatorios.');
@@ -3797,19 +3802,10 @@
             role: updatedUserRole,
             updatedAt: new Date().toISOString()
           };
+          
+          const success = await authManager.updateUserProfile(userId, updatedProfile);
 
-          let profileUpdateSuccess = false;
-          let passwordUpdateSuccess = true; // Assume true if no password is provided
-
-          // Update user profile in Firestore
-          profileUpdateSuccess = await authManager.updateUserProfile(userId, updatedProfile);
-
-          // If a new password is provided, attempt to update it (simulated)
-          if (newPassword) {
-            passwordUpdateSuccess = await authManager.updateUserPasswordByAdmin(userId, newPassword);
-          }
-
-          if (profileUpdateSuccess && passwordUpdateSuccess) {
+          if (success) {
             ui.closeModal();
             ui.showToast('Usuario actualizado exitosamente.');
             this.loadUsers(); // Recargar la lista de usuarios
@@ -3820,12 +3816,9 @@
       }
 
       async deleteUser(userId) {
-        ui.confirmAction('¿Está seguro de eliminar este usuario? Esta acción es irreversible y eliminará la cuenta de autenticación (simulado).', async () => {
-          // Usar el método de AuthManager para eliminar el usuario
-          const success = await authManager.deleteUserByAdmin(userId);
-          if (success) {
-            this.loadUsers(); // Recargar la lista de usuarios
-          }
+        // This is a UI-only confirmation. Actual deletion is disabled.
+        ui.confirmAction('La eliminación de usuarios requiere un backend seguro y ha sido deshabilitada. ¿Desea continuar de todos modos (no se realizarán cambios)?', () => {
+             ui.showToast('Acción cancelada. La eliminación de usuarios está deshabilitada.');
         });
       }
     }
@@ -4016,422 +4009,10 @@
     const reportManager = new ReportManager();
     const userManager = new UserManager(); // Nueva instancia del gestor de usuarios
 
-    // ===== SAMPLE DATA LOADER =====
-    async function loadSampleData() {
-      // Crear usuarios de Firebase Auth y sus perfiles en Firestore
-      const initialUsers = [
-        { email: 'javier@example.com', password: 'password123', role: 'Javier', username: 'Javier' },
-        { email: 'diego@example.com', password: 'password123', role: 'Diego', username: 'Diego' },
-        { email: 'nena@example.com', password: 'password123', role: 'Nena', username: 'Nena' }
-      ];
-
-      for (const userData of initialUsers) {
-        try {
-          // Intentar crear el usuario en Firebase Auth
-          const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
-          const user = userCredential.user;
-          // Guardar el perfil en Firestore
-          await setDoc(doc(db, 'users', user.uid), {
-            email: userData.email,
-            role: userData.role,
-            username: userData.username,
-            createdAt: new Date().toISOString(),
-            lastLogin: new Date().toISOString() // Para el ejemplo
-          });
-          console.log(`Usuario ${userData.email} creado y perfil guardado.`);
-        } catch (error) {
-          if (error.code === 'auth/email-already-in-use') {
-            console.warn(`Usuario ${userData.email} ya existe en Firebase Auth. Saltando creación.`);
-            // Si ya existe, asegúrate de que su perfil de Firestore también exista y esté actualizado
-            // Esto es un escenario más complejo que requeriría lógica adicional o una Cloud Function
-            // para sincronizar usuarios de Auth con perfiles de Firestore si el perfil no existe.
-            // Para este ejemplo, simplemente lo ignoramos si el email ya está en uso.
-          } else {
-            console.error(`Error al crear usuario ${userData.email}:`, error);
-          }
-        }
-      }
-
-      const suppliers = [
-        { 
-          id: 'supplier1',
-          name: 'ElectroGlobal SAS', 
-          nit: '800123456', 
-          contact: 'Carlos Ruiz', 
-          phone: '3001234567', 
-          email: 'ventas@electroglobal.com', 
-          address: 'Calle 10 #15-20, Bogotá', 
-          notes: 'Principal proveedor de celulares',
-          createdAt: '2023-01-01T10:00:00Z'
-        },
-        { 
-          id: 'supplier2',
-          name: 'TecnoImport Ltda', 
-          nit: '900789012', 
-          contact: 'Ana López', 
-          phone: '3109876543', 
-          email: 'ana@tecnoimport.com', 
-          address: 'Av 5 #8-30, Medellín',
-          notes: 'Especialistas en accesorios',
-          createdAt: '2023-01-05T11:00:00Z'
-        },
-        { 
-          id: 'supplier3',
-          name: 'Accesorios del Norte', 
-          nit: '700456789', 
-          contact: 'Luis Gómez', 
-          phone: '3201122334', 
-          email: 'luis@accesoriosnorte.com', 
-          address: 'Carrera 3 #12-45, Barranquilla',
-          notes: 'Fundas y protectores',
-          createdAt: '2023-01-10T12:00:00Z'
-        }
-      ];
-
-      const products = [
-        { 
-          id: 'product1', 
-          name: 'iPhone 15 Pro', 
-          sku: 'IPH15P-128', 
-          category: 'Celulares', 
-          stock: 5, // Stock inicial antes de compras/ventas
-          costPrice: 3200000, 
-          avgCostPrice: 3200000, 
-          sellPrice: 4200000, 
-          image: 'https://via.placeholder.com/100x100?text=iPhone15Pro', 
-          description: 'iPhone 15 Pro 128GB Titanio Natural',
-          imeis: ['IMEI-IPH15P-001', 'IMEI-IPH15P-002', 'IMEI-IPH15P-003', 'IMEI-IPH15P-004', 'IMEI-IPH15P-005'], 
-          createdAt: '2023-01-01T10:30:00Z'
-        },
-        { 
-          id: 'product2',
-          name: 'Samsung Galaxy S24', 
-          sku: 'SGS24-256', 
-          category: 'Celulares', 
-          stock: 4, 
-          costPrice: 2800000, 
-          avgCostPrice: 2800000, 
-          sellPrice: 3600000, 
-          image: 'https://via.placeholder.com/100x100?text=SGS24', 
-          description: 'Samsung Galaxy S24 256GB Phantom Black',
-          imeis: ['IMEI-SGS24-001', 'IMEI-SGS24-002', 'IMEI-SGS24-003', 'IMEI-SGS24-004'],
-          createdAt: '2023-01-02T11:00:00Z'
-        },
-        { 
-          id: 'product3',
-          name: 'Cargador Rápido 65W USB-C', 
-          sku: 'CRG-65W-C', 
-          category: 'Cargadores', 
-          stock: 20, 
-          costPrice: 55000, 
-          avgCostPrice: 55000, 
-          sellPrice: 89000, 
-          image: 'https://via.placeholder.com/100x100?text=Charger', 
-          description: 'Cargador rápido 65W con cable USB-C',
-          imeis: [],
-          createdAt: '2023-01-03T12:00:00Z'
-        },
-        { 
-          id: 'product4',
-          name: 'Funda MagSafe iPhone 15', 
-          sku: 'FUN-MAG-15', 
-          category: 'Fundas', 
-          stock: 15, 
-          costPrice: 25000, 
-          avgCostPrice: 25000, 
-          sellPrice: 45000, 
-          image: 'https://via.placeholder.com/100x100?text=Case', 
-          description: 'Funda compatible con MagSafe para iPhone 15',
-          imeis: [],
-          createdAt: '2023-01-04T13:00:00Z'
-        },
-        { 
-          id: 'product5',
-          name: 'AirPods Pro 2da Gen', 
-          sku: 'APP-2GEN', 
-          category: 'Audífonos', 
-          stock: 10, 
-          costPrice: 650000, 
-          avgCostPrice: 650000, 
-          sellPrice: 850000, 
-          image: 'https://via.placeholder.com/100x100?text=AirPods', 
-          description: 'AirPods Pro 2da generación con cancelación de ruido',
-          imeis: [],
-          createdAt: '2023-01-05T14:00:00Z'
-        },
-        { 
-          id: 'product6',
-          name: 'Cable USB-C a Lightning', 
-          sku: 'CBL-C-LTG', 
-          category: 'Cables', 
-          stock: 30, 
-          costPrice: 18000, 
-          avgCostPrice: 18000, 
-          sellPrice: 32000, 
-          image: 'https://via.placeholder.com/100x100?text=Cable', 
-          description: 'Cable USB-C a Lightning 1m certificado MFi',
-          imeis: [],
-          createdAt: '2023-01-06T15:00:00Z'
-        }
-      ];
-
-      const customers = [
-        {
-          id: 'customer1', 
-          name: 'María Pérez',
-          phone: '3151234567',
-          email: 'maria.perez@email.com',
-          address: 'Calle 5 #10-20, Bogotá',
-          totalPurchases: 0, // Will be updated by sales
-          lastPurchase: null,
-          createdAt: '2023-01-15T09:00:00Z'
-        },
-        {
-          id: 'customer2',
-          name: 'Juan Gómez',
-          phone: '3109876543',
-          email: 'juan.gomez@email.com',
-          address: 'Av 8 #15-30, Medellín',
-          totalPurchases: 0,
-          lastPurchase: null,
-          createdAt: '2023-01-10T10:00:00Z'
-        },
-        {
-          id: 'customer3',
-          name: 'Ana López',
-          phone: '3201122334',
-          email: 'ana.lopez@email.com',
-          address: 'Carrera 3 #12-45, Cali',
-          totalPurchases: 0,
-          lastPurchase: null,
-          createdAt: '2023-01-08T11:00:00Z'
-        }
-      ];
-
-      const purchases = [
-        {
-          id: 'purchase1',
-          supplierId: 'supplier1',
-          date: '2024-01-01',
-          items: [
-            { productId: 'product1', quantity: 5, costPrice: 3200000, imeis: ['IMEI-IPH15P-001', 'IMEI-IPH15P-002', 'IMEI-IPH15P-003', 'IMEI-IPH15P-004', 'IMEI-IPH15P-005'] }
-          ],
-          total: (5 * 3200000),
-          note: 'Compra inicial de celulares',
-          paymentStatus: 'paid',
-          dueDate: null,
-          createdAt: '2024-01-01T10:00:00Z'
-        },
-        {
-          id: 'purchase2',
-          supplierId: 'supplier2',
-          date: '2024-01-05',
-          items: [
-            { productId: 'product3', quantity: 20, costPrice: 55000 },
-            { productId: 'product4', quantity: 15, costPrice: 25000 }
-          ],
-          total: (20 * 55000) + (15 * 25000),
-          note: 'Restock de accesorios',
-          paymentStatus: 'pending',
-          dueDate: '2024-02-05',
-          createdAt: '2024-01-05T11:00:00Z'
-        }
-      ];
-
-      const sales = [
-        {
-          id: 'sale1',
-          customerId: 'customer1',
-          customerName: 'María Pérez',
-          customerPhone: '3151234567',
-          customerEmail: 'maria.perez@email.com',
-          customerAddress: 'Calle 5 #10-20, Bogotá',
-          date: '2024-01-15',
-          items: [
-            { productId: 'product1', productName: 'iPhone 15 Pro', quantity: 1, sellPrice: 4200000, imeisSold: ['IMEI-IPH15P-001'] }
-          ],
-          imeisSold: ['IMEI-IPH15P-001'],
-          subtotal: 4200000,
-          taxRate: 19,
-          tax: 4200000 * 0.19,
-          discount: 0,
-          total: 4200000 * 1.19,
-          paymentStatus: 'paid',
-          paymentMethod: 'tarjeta',
-          creditDueDate: null,
-          createdAt: '2024-01-15T10:00:00Z'
-        },
-        {
-          id: 'sale2',
-          customerId: 'customer2',
-          customerName: 'Juan Gómez',
-          customerPhone: '3109876543',
-          customerEmail: 'juan.gomez@email.com',
-          customerAddress: 'Av 8 #15-30, Medellín',
-          date: '2024-01-10',
-          items: [
-            { productId: 'product3', productName: 'Cargador Rápido 65W USB-C', quantity: 2, sellPrice: 89000, imeisSold: [] }, // MODIFICACIÓN: Añadido imeisSold: []
-            { productId: 'product4', productName: 'Funda MagSafe iPhone 15', quantity: 1, sellPrice: 45000, imeisSold: [] } // MODIFICACIÓN: Añadido imeisSold: []
-          ],
-          imeisSold: [],
-          subtotal: (2 * 89000) + 45000,
-          taxRate: 19,
-          tax: ((2 * 89000) + 45000) * 0.19,
-          discount: 0,
-          total: ((2 * 89000) + 45000) * 1.19,
-          paymentStatus: 'credit',
-          paymentMethod: 'otro',
-          creditDueDate: '2024-02-10',
-          createdAt: '2024-01-10T11:00:00Z'
-        },
-        {
-          id: 'sale3',
-          customerId: 'customer3',
-          customerName: 'Ana López',
-          customerPhone: '3201122334',
-          customerEmail: 'ana.lopez@email.com',
-          address: 'Carrera 3 #12-45, Cali',
-          date: '2024-01-08',
-          items: [
-            { productId: 'product5', productName: 'AirPods Pro 2da Gen', quantity: 1, sellPrice: 850000, imeisSold: [] } // MODIFICACIÓN: Añadido imeisSold: []
-          ],
-          imeisSold: [],
-          subtotal: 850000,
-          taxRate: 19,
-          tax: 850000 * 0.19,
-          discount: 0,
-          total: 850000 * 1.19,
-          paymentStatus: 'paid',
-          paymentMethod: 'transferencia',
-          creditDueDate: null,
-          createdAt: '2024-01-08T12:00:00Z'
-        },
-        {
-          id: 'sale4',
-          customerId: null, // Consumidor final no tiene ID de cliente
-          customerName: 'Consumidor Final',
-          customerPhone: '',
-          customerEmail: '',
-          customerAddress: '',
-          date: '2024-01-16',
-          items: [
-            { productId: 'product1', productName: 'iPhone 15 Pro', quantity: 1, sellPrice: 4200000, imeisSold: ['IMEI-IPH15P-002'] }
-          ],
-          imeisSold: ['IMEI-IPH15P-002'],
-          subtotal: 4200000,
-          taxRate: 19,
-          tax: 4200000 * 0.19,
-          discount: 0,
-          total: 4200000 * 1.19,
-          paymentStatus: 'paid',
-          paymentMethod: 'efectivo',
-          creditDueDate: null,
-          createdAt: '2024-01-16T13:00:00Z'
-        }
-      ];
-
-      const expenses = [
-        {
-          id: 'expense1',
-          concept: 'Arriendo Local',
-          amount: 1500000,
-          category: 'Arriendo',
-          date: '2024-01-01',
-          description: 'Pago de arriendo mensual',
-          createdAt: '2024-01-01T09:00:00Z'
-        },
-        {
-          id: 'expense2',
-          concept: 'Factura de Energía',
-          amount: 250000,
-          category: 'Servicios',
-          date: '2024-01-10',
-          description: 'Consumo de energía del mes anterior',
-          createdAt: '2024-01-10T09:30:00Z'
-        },
-        {
-          id: 'expense3',
-          concept: 'Sueldo Empleado 1',
-          amount: 1200000,
-          category: 'Sueldos',
-          date: '2024-01-15',
-          description: 'Salario de enero',
-          createdAt: '2024-01-15T09:00:00Z'
-        },
-        {
-          id: 'expense4',
-          concept: 'Campaña Publicidad Instagram',
-          amount: 300000,
-          category: 'Publicidad',
-          date: '2024-01-20',
-          description: 'Campaña de marketing digital',
-          createdAt: '2024-01-20T10:00:00Z'
-        }
-      ];
-
-      const accountsReceivable = [
-        {
-          id: 'ar1',
-          saleId: 'sale2',
-          customerId: 'customer2',
-          customerName: 'Juan Gómez',
-          amount: sales[1].total,
-          dueDate: '2024-02-10',
-          status: 'pending',
-          createdAt: '2024-01-10T11:00:00Z'
-        }
-      ];
-
-      const accountsPayable = [
-        {
-          id: 'ap1',
-          purchaseId: 'purchase2',
-          supplierId: 'supplier2',
-          supplierName: 'TecnoImport Ltda',
-          amount: purchases[1].total,
-          dueDate: '2024-02-05',
-          status: 'pending',
-          createdAt: '2024-01-05T11:00:00Z'
-        }
-      ];
-
-      // Usamos storage.set para sobrescribir colecciones completas con los datos de ejemplo.
-      await storage.set('suppliers', suppliers);
-      await storage.set('products', products);
-      await storage.set('customers', customers);
-      await storage.set('purchases', purchases);
-      await storage.set('sales', sales);
-      await storage.set('expenses', expenses);
-      await storage.set('accountsReceivable', accountsReceivable);
-      await storage.set('accountsPayable', accountsPayable);
-
-      // Guardar configuración inicial
-      await storage.set('settings', [{
-        id: 'app_settings',
-        companyName: 'CeluStore',
-        companyNIT: '987654321',
-        companyAddress: 'Calle Ficticia 123, Ciudad',
-        logoURL: 'https://via.placeholder.com/100x50?text=CeluStore',
-        taxRate: 19,
-        currency: 'COP',
-        theme: 'light',
-        minStock: 5
-      }]);
-
-      ui.showToast('Datos de ejemplo cargados exitosamente en Firebase');
-    }
-
     // ===== EVENT LISTENERS =====
     document.addEventListener('DOMContentLoaded', async () => {
       await storage.init(); // Inicializa el StorageManager (ahora con Firebase)
       await authManager.init(); // Inicializa el AuthManager y escucha cambios de autenticación
-
-      // Comprobar si necesitamos cargar datos de ejemplo
-      // Si la colección 'users' está vacía en Firebase, cargamos los datos de ejemplo.
-      const usersCheck = await storage.get('users');
-      if (usersCheck.length === 0) {
-        await loadSampleData();
-      }
 
       // Login functionality
       document.getElementById('loginButton').addEventListener('click', async () => {
@@ -4511,6 +4092,38 @@
       // Sales management
       document.getElementById('btnNewSale').addEventListener('click', () => saleManager.createSale());
       document.getElementById('searchSales').addEventListener('input', () => saleManager.loadSales());
+
+      // Quick Actions Dropdown
+      document.getElementById('quickActionNewSale').addEventListener('click', (e) => {
+        e.preventDefault();
+        saleManager.createSale();
+      });
+      document.getElementById('quickActionNewProduct').addEventListener('click', (e) => {
+        e.preventDefault();
+        productManager.addProduct();
+      });
+      document.getElementById('quickActionNewPurchase').addEventListener('click', (e) => {
+        e.preventDefault();
+        purchaseManager.addPurchase();
+      });
+      document.getElementById('quickActionNewExpense').addEventListener('click', (e) => {
+        e.preventDefault();
+        expenseManager.addExpense();
+      });
+
+      // Global Search
+      document.getElementById('globalSearch').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        // For now, this just filters the current view. A more advanced implementation
+        // could search across all sections.
+        if (ui.activeTab === 'products') {
+          productManager.loadProducts(query);
+        } else if (ui.activeTab === 'customers') {
+          customerManager.loadCustomers(query);
+        } else if (ui.activeTab === 'sales') {
+          saleManager.loadSales(query);
+        }
+      });
 
       // Delegación de eventos para la tabla de ventas
       document.getElementById('salesTable').addEventListener('click', (e) => {
@@ -4605,6 +4218,7 @@
 
       // Cash Report
       document.getElementById('cashReportDate').addEventListener('change', () => cashReportManager.loadCashReport());
+      document.getElementById('cashReportDate').value = new Date().toISOString().split('T')[0];
 
       // Accounts Receivable management
       document.getElementById('accountsReceivableTable').addEventListener('click', (e) => {
