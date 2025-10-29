@@ -603,6 +603,113 @@
           }
         });
       }
+
+    handleAccountsReceivableClick(e) {
+        const target = e.target.closest('button');
+        if (!target) return;
+
+        const action = target.dataset.action;
+        const id = target.dataset.id;
+
+        if (action === 'add-payment') {
+            this.addPayment(id);
+        } else if (action === 'view-history') {
+            this.viewHistory(id);
+        }
+    }
+
+      async addPayment(accountId) {
+        const account = await storage.get('accountsReceivable', accountId);
+        if (!account) {
+            ui.showToast('Cuenta no encontrada.');
+            return;
+        }
+
+        const body = `
+            <p><strong>Deuda Total:</strong> ${ui.formatCurrency(account.amount)}</p>
+            <p><strong>Saldo Pendiente:</strong> ${ui.formatCurrency(account.pendingAmount)}</p>
+            <hr style="margin: 1rem 0;">
+            <div class="form-group">
+                <label class="form-label">Monto a Abonar</label>
+                <input type="number" class="form-input" id="paymentAmount" step="0.01" min="0.01" max="${account.pendingAmount}" required>
+            </div>
+        `;
+
+        ui.showModal('Registrar Abono', body, async () => {
+            const paymentAmount = parseFloat(document.getElementById('paymentAmount').value);
+            if (!paymentAmount || paymentAmount <= 0 || paymentAmount > account.pendingAmount) {
+                ui.showToast('Por favor, ingrese un monto válido.');
+                return;
+            }
+
+            account.pendingAmount -= paymentAmount;
+            account.payments.push({
+                amount: paymentAmount,
+                date: new Date().toISOString()
+            });
+
+            if (account.pendingAmount <= 0) {
+                account.status = 'paid';
+                account.paidAt = new Date().toISOString();
+                ui.showToast('¡Cuenta pagada en su totalidad!');
+            } else {
+                ui.showToast('Abono registrado exitosamente.');
+            }
+
+            try {
+                await storage.update('accountsReceivable', account);
+                dashboardManager.loadDashboard(); 
+                ui.closeModal();
+                this.loadAccountsReceivable();
+            } catch (error) {
+                console.error("Error al registrar el abono:", error);
+                ui.showToast('Error al registrar el abono.');
+            }
+        });
+      }
+
+    async viewHistory(accountId) {
+        const account = await storage.get('accountsReceivable', accountId);
+        if (!account) {
+            ui.showToast('Cuenta no encontrada.');
+            return;
+        }
+
+        let historyHtml = '<p>No hay abonos registrados para esta cuenta.</p>';
+        if (account.payments && account.payments.length > 0) {
+            historyHtml = `
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th style="text-align:right;">Monto Abonado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${account.payments.map(p => `
+                                <tr>
+                                    <td>${new Date(p.date).toLocaleString()}</td>
+                                    <td style="text-align:right;">${ui.formatCurrency(p.amount)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        const body = `
+            <p><strong>Cliente:</strong> ${account.customerName}</p>
+            <p><strong>Deuda Total:</strong> ${ui.formatCurrency(account.amount)}</p>
+            <p><strong>Saldo Pendiente:</strong> ${ui.formatCurrency(account.pendingAmount)}</p>
+            <hr style="margin: 1rem 0;">
+            <h4>Historial de Abonos</h4>
+            ${historyHtml}
+        `;
+
+        ui.showModal('Historial de Pagos', body, () => ui.closeModal(), false);
+    }
     }
 
     // ===== PRODUCT MANAGER =====
@@ -1445,6 +1552,8 @@
                 customerId: customer.id,
                 customerName: customer.name,
                 amount: total,
+                pendingAmount: total, // Initialize pending amount
+                payments: [], // Initialize payments history
                 dueDate: creditDueDate,
                 status: 'pending',
                 createdAt: new Date().toISOString()
@@ -2760,37 +2869,65 @@
 
     // ===== ACCOUNTS RECEIVABLE MANAGER =====
     class AccountsReceivableManager {
+        constructor() {
+            this.activeFilter = 'pending';
+        }
+
       async loadAccountsReceivable() {
         const accounts = await storage.get('accountsReceivable');
         const customers = await storage.get('customers');
         const tableBody = document.querySelector('#accountsReceivableTable tbody');
         tableBody.innerHTML = '';
 
-        const filtered = accounts.filter(acc => acc.status === 'pending');
+        const filtered = accounts.filter(acc => acc.status === this.activeFilter);
 
-        filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)); // Sort by due date
+        if (this.activeFilter === 'pending') {
+            filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)); // Sort by due date
+        } else {
+            filtered.sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt)); // Sort paid by paid date
+        }
+
 
         filtered.forEach(account => {
           const customer = customers.find(c => String(c.id) === String(account.customerId)); // Comparar IDs como strings
-          const isOverdue = new Date(account.dueDate) < new Date() && account.status === 'pending';
-          const statusClass = isOverdue ? 'status-low-stock' : 'status-pending'; // Red for overdue, yellow for pending
-          const statusText = isOverdue ? 'Vencida' : 'Pendiente';
-          const statusIcon = isOverdue ? 'fas fa-exclamation-circle' : 'fas fa-clock';
-
           const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><strong>${customer ? customer.name : account.customerName}</strong></td>
-            <td>#${account.saleId}</td>
-            <td>${new Date(account.createdAt).toLocaleDateString()}</td>
-            <td><strong>${ui.formatCurrency(account.amount)}</strong></td>
-            <td>${new Date(account.dueDate).toLocaleDateString()}</td>
-            <td><span class="status-badge ${statusClass}"><i class="${statusIcon}"></i> ${statusText}</span></td>
-            <td class="no-print">
-              <button class="btn btn-sm btn-secondary" data-action="mark-paid" data-id="${account.id}">
-                <i class="fas fa-check"></i> Marcar como Pagada
-              </button>
-            </td>
-          `;
+
+          if (this.activeFilter === 'pending') {
+            const isOverdue = new Date(account.dueDate) < new Date() && account.status === 'pending';
+            const statusClass = isOverdue ? 'status-low-stock' : 'status-pending'; // Red for overdue, yellow for pending
+            const statusText = isOverdue ? 'Vencida' : 'Pendiente';
+            const statusIcon = isOverdue ? 'fas fa-exclamation-circle' : 'fas fa-clock';
+            tr.innerHTML = `
+                <td><strong>${customer ? customer.name : account.customerName}</strong></td>
+                <td>#${account.saleId}</td>
+                <td>${new Date(account.createdAt).toLocaleDateString()}</td>
+                <td><strong>${ui.formatCurrency(account.pendingAmount)}</strong> / ${ui.formatCurrency(account.amount)}</td>
+                <td>${new Date(account.dueDate).toLocaleDateString()}</td>
+                <td><span class="status-badge ${statusClass}"><i class="${statusIcon}"></i> ${statusText}</span></td>
+                <td class="no-print">
+                <button class="btn btn-sm btn-secondary" data-action="add-payment" data-id="${account.id}">
+                    <i class="fas fa-plus"></i> Abonar
+                </button>
+                <button class="btn btn-sm btn-outline" data-action="view-history" data-id="${account.id}">
+                    <i class="fas fa-history"></i> Historial
+                </button>
+                </td>
+            `;
+          } else { // 'paid' view
+            tr.innerHTML = `
+                <td><strong>${customer ? customer.name : account.customerName}</strong></td>
+                <td>#${account.saleId}</td>
+                <td>${new Date(account.createdAt).toLocaleDateString()}</td>
+                <td><strong>${ui.formatCurrency(account.amount)}</strong></td>
+                <td>${account.paidAt ? new Date(account.paidAt).toLocaleDateString() : 'N/A'}</td>
+                <td><span class="status-badge status-paid"><i class="fas fa-check-circle"></i> Pagada</span></td>
+                <td class="no-print">
+                <button class="btn btn-sm btn-outline" data-action="view-history" data-id="${account.id}">
+                    <i class="fas fa-history"></i> Historial
+                </button>
+                </td>
+            `;
+          }
           tableBody.appendChild(tr);
         });
       }
@@ -2964,7 +3101,9 @@
         const products = await storage.get('products');
         const expenses = await storage.get('expenses');
 
-        const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
+        const totalSales = sales
+          .filter(s => s.paymentStatus !== 'credit')
+          .reduce((sum, s) => sum + s.total, 0);
         const totalPurchasesCost = purchases.reduce((sum, p) => sum + p.total, 0);
         const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
         
@@ -3688,7 +3827,9 @@
                   <i class="fas fa-edit"></i> Editar
                 </button>
               ` : ''}
-              // The delete button has been removed as the functionality is not supported without a backend.
+                <button class="btn btn-sm btn-destructive" data-action="delete-user" data-id="${user.id}" ${isCurrentUser ? 'disabled' : ''}>
+                    <i class="fas fa-trash"></i> Eliminar
+                </button>
             </td>
           `;
           tableBody.appendChild(tr);
@@ -3816,9 +3957,21 @@
       }
 
       async deleteUser(userId) {
-        // This is a UI-only confirmation. Actual deletion is disabled.
-        ui.confirmAction('La eliminación de usuarios requiere un backend seguro y ha sido deshabilitada. ¿Desea continuar de todos modos (no se realizarán cambios)?', () => {
-             ui.showToast('Acción cancelada. La eliminación de usuarios está deshabilitada.');
+        const currentUser = authManager.currentUser;
+        if (currentUser && currentUser.uid === userId) {
+            ui.showToast('No puedes eliminarte a ti mismo.');
+            return;
+        }
+
+        ui.confirmAction('¿Estás seguro de que quieres eliminar este usuario? Esta acción no se puede deshacer.', async () => {
+            try {
+                await storage.delete('users', userId);
+                ui.showToast('Usuario eliminado exitosamente.');
+                this.loadUsers();
+            } catch (error) {
+                console.error("Error al eliminar usuario:", error);
+                ui.showToast('Error al eliminar usuario. Consulta la consola para más detalles.');
+            }
         });
       }
     }
@@ -4025,20 +4178,6 @@
       });
 
       // Register functionality
-      document.getElementById('registerButton').addEventListener('click', async () => {
-        const email = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        const role = document.getElementById('roleSelect').value;
-        const loginError = document.getElementById('loginError');
-        loginError.textContent = ''; // Clear previous errors
-
-        if (!email || !password || !role) {
-          loginError.textContent = 'Email, contraseña y rol son obligatorios para el registro.';
-          return;
-        }
-
-        await authManager.register(email, password, role);
-      });
 
       // Navigation
       document.querySelectorAll('.nav-item').forEach(link => {
@@ -4221,12 +4360,16 @@
       document.getElementById('cashReportDate').value = new Date().toISOString().split('T')[0];
 
       // Accounts Receivable management
-      document.getElementById('accountsReceivableTable').addEventListener('click', (e) => {
-        const target = e.target.closest('button');
-        if (target && target.dataset.action === 'mark-paid') {
-          const id = target.dataset.id;
-          accountsReceivableManager.markAsPaid(id);
+      document.querySelector('#accounts-receivable .tabs').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-button')) {
+            document.querySelectorAll('#accounts-receivable .tab-button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            accountsReceivableManager.activeFilter = e.target.dataset.filter;
+            accountsReceivableManager.loadAccountsReceivable();
         }
+      });
+      document.getElementById('accountsReceivableTable').addEventListener('click', (e) => {
+        accountsReceivableManager.handleAccountsReceivableClick(e);
       });
 
       // Accounts Payable management
@@ -4242,6 +4385,9 @@
       document.getElementById('btnGenerateReport').addEventListener('click', () => reportManager.generateReport());
       document.getElementById('btnExportReport').addEventListener('click', () => reportManager.exportReportPDF());
       document.getElementById('btnExportReportCSV').addEventListener('click', () => reportManager.exportReportCSV());
+
+      // User management
+      document.getElementById('btnAddUser').addEventListener('click', () => userManager.addUser());
 
       // Close modal on overlay click
       document.getElementById('modalOverlay').addEventListener('click', (e) => {
