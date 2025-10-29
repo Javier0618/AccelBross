@@ -26,16 +26,7 @@
         <label for="password" class="form-label">Contraseña</label>
         <input type="password" class="form-input" id="password" placeholder="Contraseña">
       </div>
-      <div class="form-group">
-        <label for="roleSelect" class="form-label">Rol (Solo para registro inicial)</label>
-        <select class="form-select" id="roleSelect">
-          <option value="Admin">Admin</option>
-          <option value="Ventas">Ventas</option>
-          <option value="Bodeguero">Bodeguero</option>
-        </select>
-      </div>
       <button class="btn btn-primary" id="loginButton">Iniciar Sesión</button>
-      <button class="btn btn-outline" id="registerButton" style="margin-top: 0.75rem;">Registrar Nuevo Usuario</button>
       <p class="login-error" id="loginError"></p>
     </div>
   </div>
@@ -528,6 +519,10 @@
               <h3 class="card-title">Cuentas por Cobrar</h3>
             </div>
             <div class="card-content">
+              <div class="tabs no-print">
+                <button class="tab-button active" data-filter="pending">Pendientes</button>
+                <button class="tab-button" data-filter="paid">Pagadas</button>
+              </div>
               <div class="table-container">
                 <table class="table" id="accountsReceivableTable">
                   <thead>
