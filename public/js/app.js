@@ -74,27 +74,37 @@ function showApp() {
 // UI
 function renderSidebar() {
     const nav = document.getElementById('sidebarNav');
-    const items = [
-        { title: 'Dashboard', icon: 'chart-line', page: 'dashboard' },
-        { title: 'Productos', icon: 'box', page: 'products' },
-        { title: 'Ventas', icon: 'cash-register', page: 'sales' },
-        { title: 'Clientes', icon: 'users', page: 'customers' },
-        { title: 'Compras', icon: 'shopping-cart', page: 'purchases' },
-        { title: 'Proveedores', icon: 'truck', page: 'suppliers' },
-        { title: 'Gastos', icon: 'money-bill-wave', page: 'expenses' },
-        { title: 'Cuentas por Cobrar', icon: 'hand-holding-usd', page: 'receivable' },
-        { title: 'Cuentas por Pagar', icon: 'file-invoice-dollar', page: 'payable' },
-        { title: 'Reporte de Caja', icon: 'cash-register', page: 'cashreport' },
-        { title: 'Reportes', icon: 'chart-bar', page: 'reports' },
-        { title: 'Configuración', icon: 'cog', page: 'settings' }
-    ];
     
-    nav.innerHTML = items.map(item => `
-        <div class="nav-item" data-page="${item.page}">
-            <i class="fas fa-${item.icon}"></i>
-            <span>${item.title}</span>
-        </div>
-    `).join('');
+    const menuItems = {
+        'PRINCIPAL': [
+            { title: 'Dashboard', icon: 'chart-pie', page: 'dashboard' }
+        ],
+        'INVENTARIO': [
+            { title: 'Productos', icon: 'box', page: 'products' },
+            { title: 'Compras', icon: 'shopping-cart', page: 'purchases' },
+            { title: 'Proveedores', icon: 'truck', page: 'suppliers' }
+        ],
+        'VENTAS': [
+            { title: 'Ventas', icon: 'cash-register', page: 'sales' },
+            { title: 'Clientes', icon: 'users', page: 'customers' },
+            { title: 'Cuentas por Cobrar', icon: 'hand-holding-usd', page: 'receivable' }
+        ]
+    };
+
+    let html = '';
+    for (const section in menuItems) {
+        html += `<div class="nav-section-title">${section}</div>`;
+        menuItems[section].forEach(item => {
+            html += `
+                <div class="nav-item" data-page="${item.page}">
+                    <i class="fas fa-${item.icon}"></i>
+                    <span>${item.title}</span>
+                </div>
+            `;
+        });
+    }
+    
+    nav.innerHTML = html;
     
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -105,8 +115,12 @@ function renderSidebar() {
 
 function updateUserDisplay() {
     if (currentUser) {
-        document.getElementById('userAvatar').textContent = currentUser.username?.charAt(0).toUpperCase() || 'U';
-        document.getElementById('userName').textContent = currentUser.username || currentUser.email;
+        const initial = currentUser.username?.charAt(0).toUpperCase() || 'U';
+        
+        // Update sidebar profile
+        document.getElementById('userAvatarSidebar').textContent = initial;
+        document.getElementById('userNameSidebar').textContent = currentUser.username || 'Usuario';
+        document.getElementById('userEmailSidebar').textContent = currentUser.email;
     }
 }
 
@@ -175,55 +189,137 @@ async function loadDashboard() {
     const content = `
         <div class="metrics-grid">
             <div class="metric-card">
-                <i class="fas fa-dollar-sign" style="font-size:2rem;"></i>
-                <div class="metric-value">${formatCurrency(totalSales)}</div>
-                <div>Ventas Totales</div>
+                <div class="metric-icon sales"><i class="fas fa-dollar-sign"></i></div>
+                <div class="metric-info">
+                    <div class="metric-title">Ventas Totales</div>
+                    <div class="metric-value">${formatCurrency(totalSales)}</div>
+                    <div class="metric-change">+12% vs mes anterior</div>
+                </div>
             </div>
             <div class="metric-card">
-                <i class="fas fa-shopping-bag" style="font-size:2rem;"></i>
-                <div class="metric-value">${formatCurrency(totalPurchases)}</div>
-                <div>Costo Compras</div>
+                <div class="metric-icon purchases"><i class="fas fa-shopping-cart"></i></div>
+                <div class="metric-info">
+                    <div class="metric-title">Costo Compras</div>
+                    <div class="metric-value">${formatCurrency(totalPurchases)}</div>
+                </div>
             </div>
             <div class="metric-card">
-                <i class="fas fa-chart-line" style="font-size:2rem;"></i>
-                <div class="metric-value">${formatCurrency(totalSales - totalPurchases - totalExpenses)}</div>
-                <div>Beneficio Neto</div>
+                <div class="metric-icon profit"><i class="fas fa-chart-line"></i></div>
+                <div class="metric-info">
+                    <div class="metric-title">Beneficio Neto</div>
+                    <div class="metric-value">${formatCurrency(totalSales - totalPurchases - totalExpenses)}</div>
+                </div>
             </div>
             <div class="metric-card">
-                <i class="fas fa-boxes" style="font-size:2rem;"></i>
-                <div class="metric-value">${totalStock}</div>
-                <div>Stock Total</div>
+                <div class="metric-icon stock"><i class="fas fa-box"></i></div>
+                <div class="metric-info">
+                    <div class="metric-title">Stock Total</div>
+                    <div class="metric-value">${totalStock}</div>
+                </div>
             </div>
         </div>
         
-        <div class="card">
-            <div class="card-header">
-                <h3>Productos con Stock Bajo</h3>
+        <div class="dashboard-grid">
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>Ventas por Día (Últimos 30 días)</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="salesChart"></canvas>
+                </div>
             </div>
-            <div class="card-body">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Producto</th>
-                            <th>SKU</th>
-                            <th>Stock</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${products.filter(p => p.stock <= 5).map(p => `
-                            <tr>
-                                <td>${p.name}</td>
-                                <td>${p.sku}</td>
-                                <td><strong>${p.stock}</strong></td>
-                            </tr>
-                        `).join('') || '<tr><td colspan="3">No hay alertas de stock</td></tr>'}
-                    </tbody>
-                </table>
+            <div class="card">
+                <div class="card-header">
+                    <h3>Productos Más Vendidos</h3>
+                </div>
+                <div class="card-body placeholder-card">
+                    No hay datos de ventas aún
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>Alertas de Stock Bajo</h3>
+                </div>
+                <div class="card-body">
+                    ${(products.filter(p => p.stock <= 5).length > 0) ? `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${products.filter(p => p.stock <= 5).map(p => `
+                                    <tr>
+                                        <td>${p.name}</td>
+                                        <td><strong>${p.stock}</strong></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : `
+                        <div class="placeholder-card">
+                            <i class="fas fa-check-circle"></i>
+                            Todos los productos tienen stock adecuado
+                        </div>
+                    `}
+                </div>
             </div>
         </div>
     `;
     
     document.getElementById('contentArea').innerHTML = content;
+    renderSalesChart(sales);
+}
+
+function renderSalesChart(sales = []) {
+    const ctx = document.getElementById('salesChart')?.getContext('2d');
+    if (!ctx) return;
+
+    const salesByDay = {};
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        salesByDay[d.toISOString().split('T')[0]] = 0;
+    }
+
+    sales.forEach(sale => {
+        const saleDate = new Date(sale.date).toISOString().split('T')[0];
+        if (salesByDay.hasOwnProperty(saleDate)) {
+            salesByDay[saleDate] += parseFloat(sale.total);
+        }
+    });
+
+    const labels = Object.keys(salesByDay).map(dateStr => {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    });
+    const data = Object.values(salesByDay);
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Ventas',
+                data: data,
+                borderColor: 'rgba(8, 145, 178, 1)',
+                backgroundColor: 'rgba(8, 145, 178, 0.1)',
+                fill: true,
+                tension: 0.4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
 }
 
 // Productos
