@@ -197,7 +197,7 @@ async function loadDashboard() {
                 </div>
             </div>
             <div class="metric-card">
-                <div class="metric-icon purchases"><i class="fas fa-shopping-cart"></i></div>
+                <div class="metric-icon purchases"><i class="fas fa-dolly"></i></div>
                 <div class="metric-info">
                     <div class="metric-title">Costo Compras</div>
                     <div class="metric-value">${formatCurrency(totalPurchases)}</div>
@@ -211,7 +211,7 @@ async function loadDashboard() {
                 </div>
             </div>
             <div class="metric-card">
-                <div class="metric-icon stock"><i class="fas fa-box"></i></div>
+                <div class="metric-icon stock"><i class="fas fa-boxes-stacked"></i></div>
                 <div class="metric-info">
                     <div class="metric-title">Stock Total</div>
                     <div class="metric-value">${totalStock}</div>
@@ -228,7 +228,7 @@ async function loadDashboard() {
                     <canvas id="salesChart"></canvas>
                 </div>
             </div>
-            <div class="card">
+            <div class="card top-products-card">
                 <div class="card-header">
                     <h3>Productos Más Vendidos</h3>
                 </div>
@@ -236,7 +236,7 @@ async function loadDashboard() {
                     No hay datos de ventas aún
                 </div>
             </div>
-            <div class="card">
+            <div class="card stock-alerts-card">
                 <div class="card-header">
                     <h3>Alertas de Stock Bajo</h3>
                 </div>
@@ -261,7 +261,7 @@ async function loadDashboard() {
                     ` : `
                         <div class="placeholder-card">
                             <i class="fas fa-check-circle"></i>
-                            Todos los productos tienen stock adecuado
+                            <span>Todos los productos tienen stock adecuado</span>
                         </div>
                     `}
                 </div>

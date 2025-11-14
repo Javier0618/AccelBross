@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AccelBross ERP</title>
-    <link rel="stylesheet" href__="public/css/style.css">
-    <link href__="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Open+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link href__="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="public/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Open+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -35,8 +35,11 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
-                    <i class="fas fa-dollar-sign"></i>
-                    <span>AccelBross</span>
+                    <div class="logo-icon"><i class="fas fa-dollar-sign"></i></div>
+                    <div class="logo-text">
+                        <h2>AccelBross</h2>
+                        <span>Sistema ERP</span>
+                    </div>
                 </div>
             </div>
             <nav class="sidebar-nav" id="sidebarNav">
@@ -44,11 +47,14 @@
             </nav>
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                     <div class="user-avatar" id="userAvatarSidebar">U</div>
-                     <div class="user-info">
-                         <span id="userNameSidebar">Usuario</span>
-                         <span id="userEmailSidebar">usuario@accel.com</span>
-                     </div>
+                    <div class="user-details">
+                        <div class="user-avatar" id="userAvatarSidebar">U</div>
+                        <div class="user-info">
+                            <span id="userNameSidebar">Usuario</span>
+                            <span id="userEmailSidebar">usuario@accel.com</span>
+                        </div>
+                    </div>
+                    <i class="fas fa-sign-out-alt logout-icon" id="logoutBtn"></i>
                 </div>
             </div>
         </aside>
@@ -60,7 +66,7 @@
                     <h1 id="pageTitle">Dashboard</h1>
                 </div>
                 <div class="header-right">
-                    <button class="btn btn-primary" id="quickActionsBtn">
+                    <button class="btn btn-secondary" id="quickActionsBtn">
                         <i class="fas fa-plus"></i> Acciones
                     </button>
                     <button class="btn-icon">
